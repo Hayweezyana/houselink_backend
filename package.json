@@ -2,6 +2,10 @@
   "name": "houselink-backend",
   "version": "1.0.0",
   "main": "index.js",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "dev": "nodemon --watch src --exec ts-node src/index.ts",
     "start": "node dist/src/index.js",

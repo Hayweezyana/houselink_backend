@@ -1,9 +1,12 @@
 [build]
-builder = "nixpacks"
+builder      = "nixpacks"
 buildCommand = "npm install && npm run build"
 
+[build.nixpacksPlan.phases.setup]
+nixPkgs = ["nodejs_20"]
+
 [deploy]
-startCommand = "npm run db:migrate && npm start"
+startCommand = "node migrate.js && npm start"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
