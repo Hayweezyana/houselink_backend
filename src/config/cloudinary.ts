@@ -1,5 +1,7 @@
 import cloudinaryV2 from "cloudinary";
-import { CloudinaryStorage } from "multer-storage-cloudinary";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const multerCloudinary = require("multer-storage-cloudinary");
+const CloudinaryStorage = multerCloudinary.CloudinaryStorage ?? multerCloudinary.default?.CloudinaryStorage ?? multerCloudinary;
 
 const cloudinary = cloudinaryV2.v2;
 
