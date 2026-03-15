@@ -2,10 +2,13 @@ import type { Knex } from "knex";
 import dotenv from "dotenv";
 import path from "path";
 
-dotenv.config();
+// Load .env from the project root, regardless of cwd or NODE_ENV
+dotenv.config({ path: path.resolve(__dirname, ".env") });
 
-// Supports both Neon-style PG* vars and legacy DB_* vars
-const connection = process.env.PGHOST
+// Supports DATABASE_URL (Neon connection string) OR individual PG* vars
+const connection: Knex.PgConnectionConfig | string = process.env.DATABASE_URL
+  ? process.env.DATABASE_URL
+  : process.env.PGHOST
   ? {
       host: process.env.PGHOST,
       user: process.env.PGUSER,
@@ -22,26 +25,23 @@ const connection = process.env.PGHOST
       port: Number(process.env.DB_PORT) || 5432,
     };
 
+const migrationConfig = {
+  directory: path.join(__dirname, "src/migrations"),
+  extension: "ts",
+};
+
 const config: { [key: string]: Knex.Config } = {
   development: {
     client: "pg",
     connection,
-    migrations: {
-      directory: path.join(__dirname, "src/migrations"),
-      extension: "ts",
-    },
-    seeds: {
-      directory: path.join(__dirname, "src/seeds"),
-    },
+    migrations: migrationConfig,
+    seeds: { directory: path.join(__dirname, "src/seeds") },
   },
   production: {
     client: "pg",
     connection,
     pool: { min: 2, max: 10 },
-    migrations: {
-      directory: path.join(__dirname, "src/migrations"),
-      extension: "ts",
-    },
+    migrations: migrationConfig,
   },
 };
 

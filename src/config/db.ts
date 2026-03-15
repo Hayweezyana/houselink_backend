@@ -1,10 +1,13 @@
 import { Knex, knex } from "knex";
 import dotenv from "dotenv";
+import path from "path";
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
-// Supports both Neon-style PG* vars and legacy DB_* vars
-const connection: Knex.PgConnectionConfig = process.env.PGHOST
+// Supports DATABASE_URL (Neon connection string) OR individual PG* vars
+const connection: Knex.PgConnectionConfig | string = process.env.DATABASE_URL
+  ? process.env.DATABASE_URL
+  : process.env.PGHOST
   ? {
       host: process.env.PGHOST,
       user: process.env.PGUSER,
