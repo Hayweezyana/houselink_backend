@@ -1,20 +1,9 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import logger from "../config/logger";
 
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true, // SSL on 465 (more reliable on cloud hosts than STARTTLS 587)
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM = `HouseLink <${process.env.GMAIL_USER}>`;
+const FROM = "HouseLink <noreply@houselinkng.com>";
 
 const OTP_SUBJECTS: Record<string, string> = {
   signup: "Verify your HouseLink account",
@@ -99,10 +88,9 @@ export async function sendReceiptEmail(opts: {
       </div>
     </div>`;
 
-  // Fire both emails and don't let one failure block the other
   await Promise.allSettled([
-    transporter.sendMail({ from: FROM, to: opts.seekerEmail, subject: `Payment Receipt — ${opts.propertyTitle}`, html: seekerHtml }),
-    transporter.sendMail({ from: FROM, to: opts.ownerEmail, subject: `Payout Incoming — ${opts.propertyTitle}`, html: ownerHtml }),
+    resend.emails.send({ from: FROM, to: opts.seekerEmail, subject: `Payment Receipt — ${opts.propertyTitle}`, html: seekerHtml }),
+    resend.emails.send({ from: FROM, to: opts.ownerEmail, subject: `Payout Incoming — ${opts.propertyTitle}`, html: ownerHtml }),
   ]);
 }
 
@@ -110,10 +98,9 @@ export async function sendOtpEmail(email: string, code: string, type: string): P
   const subject = OTP_SUBJECTS[type] ?? "Your HouseLink code";
   const html = OTP_BODIES[type]?.(code) ?? `<p>Your code: <strong>${code}</strong></p>`;
 
-  try {
-    await transporter.sendMail({ from: FROM, to: email, subject, html });
-  } catch (error) {
-    logger.error("Gmail error:", error);
+  const { error } = await resend.emails.send({ from: FROM, to: email, subject, html });
+  if (error) {
+    logger.error("Resend error:", error);
     throw new Error("Failed to send OTP email");
   }
 }
