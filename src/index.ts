@@ -39,11 +39,17 @@ app.use(compression());
 app.use(helmet());
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
-const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173").split(",");
+const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim().replace(/\/$/, "")); // normalise: trim whitespace + trailing slash
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      // Allow server-to-server (no origin) and any listed origin
+      if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ""))) {
+        return callback(null, true);
+      }
+      logger.warn(`CORS blocked origin: ${origin} (allowed: ${allowedOrigins.join(", ")})`);
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
