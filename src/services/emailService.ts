@@ -3,7 +3,7 @@ import logger from "../config/logger";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM = "HouseLink <noreply@houselinkng.com>";
+const FROM = process.env.RESEND_FROM_EMAIL ?? "HouseLink <onboarding@resend.dev>";
 
 const OTP_SUBJECTS: Record<string, string> = {
   signup: "Verify your HouseLink account",
