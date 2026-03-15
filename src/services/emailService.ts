@@ -2,11 +2,16 @@ import nodemailer from "nodemailer";
 import logger from "../config/logger";
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true, // SSL on 465 (more reliable on cloud hosts than STARTTLS 587)
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 });
 
 const FROM = `HouseLink <${process.env.GMAIL_USER}>`;
