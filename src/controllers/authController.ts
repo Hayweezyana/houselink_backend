@@ -18,10 +18,11 @@ function issueAccessToken(id: string, role: string): string {
 }
 
 function setRefreshCookie(res: Response, token: string): void {
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie(REFRESH_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure: isProd,
+    sameSite: isProd ? "none" : "strict", // cross-origin in prod (different Railway domains)
     maxAge: REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
     path: "/api/auth",
   });
@@ -309,7 +310,8 @@ export const logout = async (req: Request, res: Response, next: NextFunction): P
     if (incoming) {
       await db("refresh_tokens").where({ token: incoming }).delete();
     }
-    res.clearCookie(REFRESH_COOKIE, { path: "/api/auth" });
+    const isProd = process.env.NODE_ENV === "production";
+    res.clearCookie(REFRESH_COOKIE, { path: "/api/auth", secure: isProd, sameSite: isProd ? "none" : "strict" });
     res.json({ message: "Logged out" });
   } catch (error) {
     next(error);
