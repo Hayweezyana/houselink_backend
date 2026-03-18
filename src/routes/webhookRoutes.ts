@@ -1,39 +1,10 @@
 import express from "express";
 import crypto from "crypto";
-import axios from "axios";
 import db from "../config/db";
 import logger from "../config/logger";
-import { sendReceiptEmail } from "../services/emailService";
+import { sendCheckinConfirmationEmail, sendOwnerBookingNotificationEmail } from "../services/emailService";
 
 const router = express.Router();
-
-const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
-const PLATFORM_FEE_PERCENT = 0.05;
-
-async function initiateTransfer(
-  recipientCode: string,
-  amountKobo: number,
-  reference: string,
-  reason: string
-): Promise<string> {
-  const res = await axios.post(
-    "https://api.paystack.co/transfer",
-    {
-      source: "balance",
-      recipient: recipientCode,
-      amount: amountKobo,
-      reference,
-      reason,
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET}`,
-        "Content-Type": "application/json",
-      },
-    }
-  );
-  return res.data.data.transfer_code as string;
-}
 
 router.post("/", express.json({ type: "application/json" }), async (req, res): Promise<void> => {
   try {
@@ -53,86 +24,57 @@ router.post("/", express.json({ type: "application/json" }), async (req, res): P
 
     const { event, data } = req.body;
 
-    // ── charge.success → mark payment + initiate transfer ─────────────────────
+    // ── charge.success → hold funds, send seeker confirmation email ────────────
     if (event === "charge.success") {
       const { reference } = data;
       if (!reference) { res.sendStatus(200); return; }
 
-      // Mark payment as success
-      await db("payments").where({ reference }).update({ status: "success" });
+      await db("payments").where({ reference }).update({ status: "success", escrow_status: "held" });
 
-      // Load payment row
       const payment = await db("payments").where({ reference }).first();
       if (!payment) { res.sendStatus(200); return; }
 
-      // If already processed (transfer_reference exists), skip
-      if (payment.transfer_reference) { res.sendStatus(200); return; }
-
-      // Load owner's bank account
-      const bankAccount = await db("bank_accounts")
-        .where({ owner_id: payment.owner_id, is_default: true })
-        .first();
-
-      if (!bankAccount) {
-        logger.warn(`No bank account found for owner ${payment.owner_id} — escrow held`);
-        res.sendStatus(200);
-        return;
-      }
-
-      // Calculate split (amount is stored in naira in payments table)
-      const totalKobo = Math.round(Number(payment.amount) * 100);
-      const platformFeeKobo = Math.round(totalKobo * PLATFORM_FEE_PERCENT);
-      const ownerAmountKobo = totalKobo - platformFeeKobo;
-
-      const transferRef = `hl_tf_${reference}`;
-
+      // Send check-in confirmation email to seeker (non-blocking)
       try {
-        await initiateTransfer(
-          bankAccount.recipient_code,
-          ownerAmountKobo,
-          transferRef,
-          `HouseLink payout for payment ${reference}`
-        );
+        const property = await db("properties").where({ id: payment.property_id }).first();
+        const seeker = await db("users").where({ id: payment.user_id }).first();
 
-        await db("payments").where({ reference }).update({
-          transfer_reference: transferRef,
-          platform_fee: platformFeeKobo,
-          owner_amount: ownerAmountKobo,
-          escrow_status: "held",
-        });
-      } catch (transferErr: any) {
-        logger.error("Paystack transfer initiation failed:", transferErr?.response?.data || transferErr.message);
-        await db("payments").where({ reference }).update({
-          platform_fee: platformFeeKobo,
-          owner_amount: ownerAmountKobo,
-          escrow_status: "failed",
-        });
-        res.sendStatus(200);
-        return;
+        if (property && seeker) {
+          await sendCheckinConfirmationEmail({
+            seekerEmail: seeker.email,
+            seekerName: seeker.name,
+            propertyTitle: property.title,
+            propertyLocation: property.location,
+            totalAmount: Number(payment.amount),
+            checkinDate: payment.checkin_date ?? "Not specified",
+            checkoutDate: payment.checkout_date ?? "Not specified",
+            paymentId: payment.id,
+            reference,
+          });
+        }
+      } catch (emailErr: any) {
+        logger.error("Check-in confirmation email error:", emailErr.message);
       }
 
-      // Send receipt emails (non-blocking)
+      // Notify owner that a booking payment was received
       try {
         const property = await db("properties").where({ id: payment.property_id }).first();
         const seeker = await db("users").where({ id: payment.user_id }).first();
         const owner = await db("users").where({ id: payment.owner_id }).first();
 
         if (property && seeker && owner) {
-          await sendReceiptEmail({
-            seekerEmail: seeker.email,
-            seekerName: seeker.name,
+          await sendOwnerBookingNotificationEmail({
             ownerEmail: owner.email,
             ownerName: owner.name,
+            seekerName: seeker.name,
             propertyTitle: property.title,
-            propertyLocation: property.location,
             totalAmount: Number(payment.amount),
-            ownerAmount: ownerAmountKobo / 100,
-            platformFee: platformFeeKobo / 100,
-            reference,
+            checkinDate: payment.checkin_date ?? "Not specified",
+            checkoutDate: payment.checkout_date ?? "Not specified",
           });
         }
-      } catch (emailErr: any) {
-        logger.error("Receipt email error:", emailErr.message);
+      } catch (ownerEmailErr: any) {
+        logger.error("Owner booking notification email error:", ownerEmailErr.message);
       }
     }
 

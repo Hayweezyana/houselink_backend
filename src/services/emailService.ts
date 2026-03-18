@@ -35,6 +35,53 @@ const OTP_BODIES: Record<string, (code: string) => string> = {
     </div>`,
 };
 
+export async function sendCheckinConfirmationEmail(opts: {
+  seekerEmail: string;
+  seekerName: string;
+  propertyTitle: string;
+  propertyLocation: string;
+  totalAmount: number;
+  checkinDate: string;
+  checkoutDate: string;
+  paymentId: string;
+  reference: string;
+}): Promise<void> {
+  const fmt = (n: number) => `₦${Number(n).toLocaleString("en-NG")}`;
+  const confirmUrl = `${process.env.FRONTEND_URL}/confirm-checkin/${opts.paymentId}`;
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:520px;margin:auto;color:#1a1a1a">
+      <div style="background:#4c6ef5;padding:28px 32px;border-radius:16px 16px 0 0">
+        <h1 style="color:#fff;margin:0;font-size:22px">Payment Held — Action Required</h1>
+        <p style="color:#c5d0ff;margin:4px 0 0;font-size:13px">HouseLink Secure Escrow</p>
+      </div>
+      <div style="background:#fff;padding:32px;border:1px solid #e8e8e8;border-top:none;border-radius:0 0 16px 16px">
+        <p style="color:#555;margin:0 0 24px">Hi <strong>${opts.seekerName}</strong>, your payment of <strong>${fmt(opts.totalAmount)}</strong> is safely held in escrow.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px">
+          <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Property</td><td style="padding:10px 14px">${opts.propertyTitle}</td></tr>
+          <tr><td style="padding:10px 14px;font-weight:600">Location</td><td style="padding:10px 14px">${opts.propertyLocation}</td></tr>
+          <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Check-in</td><td style="padding:10px 14px">${opts.checkinDate}</td></tr>
+          <tr><td style="padding:10px 14px;font-weight:600">Check-out</td><td style="padding:10px 14px">${opts.checkoutDate}</td></tr>
+          <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Amount</td><td style="padding:10px 14px;font-weight:700;color:#4c6ef5">${fmt(opts.totalAmount)}</td></tr>
+          <tr><td style="padding:10px 14px;font-weight:600">Reference</td><td style="padding:10px 14px;font-family:monospace;font-size:12px">${opts.reference}</td></tr>
+        </table>
+        <div style="background:#fff9db;border:1px solid #ffd43b;border-radius:10px;padding:16px 20px;margin-bottom:24px">
+          <p style="margin:0;font-size:14px;color:#664d03"><strong>What to do after check-in:</strong><br>Once you arrive at the property and everything looks good, click the button below to release payment to the owner. Funds will NOT be released until you confirm.</p>
+        </div>
+        <a href="${confirmUrl}" style="display:block;background:#0ca678;color:#fff;text-align:center;padding:14px 24px;border-radius:10px;font-size:16px;font-weight:700;text-decoration:none">Confirm Check-in & Release Payment</a>
+        <p style="margin:20px 0 0;font-size:12px;color:#aaa;text-align:center">If you have an issue with the property, do not click the button. Contact us at support@houselinkng.com instead.</p>
+      </div>
+    </div>`;
+
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to: opts.seekerEmail,
+    subject: `Action Required: Confirm your check-in at ${opts.propertyTitle}`,
+    html,
+  });
+  if (error) logger.error("Checkin confirmation email error:", error);
+}
+
 export async function sendReceiptEmail(opts: {
   seekerEmail: string;
   seekerName: string;
@@ -56,15 +103,15 @@ export async function sendReceiptEmail(opts: {
         <p style="color:#c5d0ff;margin:4px 0 0;font-size:13px">HouseLink Secure Escrow</p>
       </div>
       <div style="background:#fff;padding:32px;border:1px solid #e8e8e8;border-top:none;border-radius:0 0 16px 16px">
-        <p style="color:#555;margin:0 0 24px">Hi <strong>${opts.seekerName}</strong>, your payment has been received and held securely in escrow.</p>
+        <p style="color:#555;margin:0 0 24px">Hi <strong>${opts.seekerName}</strong>, you have confirmed check-in and the payment has been released to the owner.</p>
         <table style="width:100%;border-collapse:collapse;font-size:14px">
           <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Property</td><td style="padding:10px 14px">${opts.propertyTitle}</td></tr>
           <tr><td style="padding:10px 14px;font-weight:600">Location</td><td style="padding:10px 14px">${opts.propertyLocation}</td></tr>
           <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Amount Paid</td><td style="padding:10px 14px;font-weight:700;color:#4c6ef5">${fmt(opts.totalAmount)}</td></tr>
           <tr><td style="padding:10px 14px;font-weight:600">Reference</td><td style="padding:10px 14px;font-family:monospace;font-size:12px">${opts.reference}</td></tr>
-          <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Status</td><td style="padding:10px 14px"><span style="background:#e6fcf5;color:#0ca678;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600">Held in Escrow</span></td></tr>
+          <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Status</td><td style="padding:10px 14px"><span style="background:#e6fcf5;color:#0ca678;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600">Released</span></td></tr>
         </table>
-        <p style="margin:24px 0 0;font-size:13px;color:#888">Funds are protected and will only be released to the owner. The owner will contact you shortly to complete the process.</p>
+        <p style="margin:24px 0 0;font-size:13px;color:#888">Thank you for using HouseLink. We hope you had a great stay!</p>
       </div>
     </div>`;
 
@@ -92,6 +139,43 @@ export async function sendReceiptEmail(opts: {
     resend.emails.send({ from: FROM, to: opts.seekerEmail, subject: `Payment Receipt — ${opts.propertyTitle}`, html: seekerHtml }),
     resend.emails.send({ from: FROM, to: opts.ownerEmail, subject: `Payout Incoming — ${opts.propertyTitle}`, html: ownerHtml }),
   ]);
+}
+
+export async function sendOwnerBookingNotificationEmail(opts: {
+  ownerEmail: string;
+  ownerName: string;
+  seekerName: string;
+  propertyTitle: string;
+  totalAmount: number;
+  checkinDate: string;
+  checkoutDate: string;
+}): Promise<void> {
+  const fmt = (n: number) => `₦${Number(n).toLocaleString("en-NG")}`;
+  const html = `
+    <div style="font-family:sans-serif;max-width:520px;margin:auto">
+      <div style="background:#0ca678;padding:28px 32px;border-radius:16px 16px 0 0">
+        <h1 style="color:#fff;margin:0;font-size:22px">New Booking Received</h1>
+        <p style="color:#c3fae8;margin:4px 0 0;font-size:13px">HouseLink Secure Escrow</p>
+      </div>
+      <div style="background:#fff;padding:32px;border:1px solid #e8e8e8;border-top:none;border-radius:0 0 16px 16px">
+        <p>Hi <strong>${opts.ownerName}</strong>, <strong>${opts.seekerName}</strong> has paid <strong>${fmt(opts.totalAmount)}</strong> for <strong>${opts.propertyTitle}</strong>.</p>
+        <p>Funds are held securely in escrow and will be released to your bank account once the seeker confirms check-in.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:16px">
+          <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Check-in</td><td style="padding:10px 14px">${opts.checkinDate}</td></tr>
+          <tr><td style="padding:10px 14px;font-weight:600">Check-out</td><td style="padding:10px 14px">${opts.checkoutDate}</td></tr>
+          <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Amount</td><td style="padding:10px 14px;font-weight:700;color:#0ca678">${fmt(opts.totalAmount)}</td></tr>
+        </table>
+        <p style="margin:24px 0 0;font-size:13px;color:#888">Please ensure the property is ready for your guest's arrival. If the seeker does not confirm within 24 hours of check-in, funds are automatically released.</p>
+      </div>
+    </div>`;
+
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to: opts.ownerEmail,
+    subject: `New Booking — ${opts.propertyTitle}`,
+    html,
+  });
+  if (error) logger.error("Owner booking notification email error:", error);
 }
 
 export async function sendOtpEmail(email: string, code: string, type: string): Promise<void> {

@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from "express";
 import db from "../config/db";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
+import { releaseEscrow } from "../services/transferService";
+import { sendReceiptEmail } from "../services/emailService";
 
 export const initializePayment = async (
   req: Request,
@@ -9,7 +11,7 @@ export const initializePayment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { property_id, amount, email } = req.body;
+    const { property_id, amount, email, checkin_date, checkout_date } = req.body;
     const user_id = req.user?.id;
 
     if (!user_id) {
@@ -52,9 +54,111 @@ export const initializePayment = async (
       reference,
       amount: Number(amount),
       payment_method: "paystack",
+      checkin_date: checkin_date || null,
+      checkout_date: checkout_date || null,
     });
 
     res.json({ message: "Payment initialized", data: response.data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/payment/:id/confirm-checkin
+ * Seeker confirms they have checked in → funds are released to owner.
+ */
+export const confirmCheckin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const seekerId = req.user?.id;
+    const { id } = req.params;
+
+    if (!seekerId) { res.status(403).json({ message: "Unauthorized" }); return; }
+
+    const payment = await db("payments").where({ id }).first();
+    if (!payment) { res.status(404).json({ message: "Payment not found" }); return; }
+    if (payment.user_id !== seekerId) { res.status(403).json({ message: "Forbidden" }); return; }
+    if (payment.status !== "success") { res.status(400).json({ message: "Payment not completed" }); return; }
+    if (payment.seeker_confirmed_at) { res.status(400).json({ message: "Already confirmed" }); return; }
+    if (payment.escrow_status === "released") { res.status(400).json({ message: "Escrow already released" }); return; }
+
+    // Mark seeker confirmation
+    await db("payments").where({ id }).update({ seeker_confirmed_at: new Date() });
+
+    // Initiate transfer to owner
+    await releaseEscrow(id);
+
+    // Send receipt emails
+    try {
+      const property = await db("properties").where({ id: payment.property_id }).first();
+      const seeker = await db("users").where({ id: payment.user_id }).first();
+      const owner = await db("users").where({ id: payment.owner_id }).first();
+      const updated = await db("payments").where({ id }).first();
+
+      if (property && seeker && owner && updated) {
+        await sendReceiptEmail({
+          seekerEmail: seeker.email,
+          seekerName: seeker.name,
+          ownerEmail: owner.email,
+          ownerName: owner.name,
+          propertyTitle: property.title,
+          propertyLocation: property.location,
+          totalAmount: Number(payment.amount),
+          ownerAmount: (updated.owner_amount ?? 0) / 100,
+          platformFee: (updated.platform_fee ?? 0) / 100,
+          reference: payment.reference,
+        });
+      }
+    } catch (emailErr: any) {
+      // non-fatal
+    }
+
+    res.json({ message: "Check-in confirmed. Payment released to owner." });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/payment/:id/release
+ * Owner requests auto-release of escrow if seeker hasn't confirmed within 24h of check-in.
+ */
+export const ownerRequestRelease = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const ownerId = req.user?.id;
+    const { id } = req.params;
+
+    if (!ownerId) { res.status(403).json({ message: "Unauthorized" }); return; }
+
+    const payment = await db("payments").where({ id }).first();
+    if (!payment) { res.status(404).json({ message: "Payment not found" }); return; }
+    if (payment.owner_id !== ownerId) { res.status(403).json({ message: "Forbidden" }); return; }
+    if (payment.status !== "success") { res.status(400).json({ message: "Payment not completed" }); return; }
+    if (payment.seeker_confirmed_at) { res.status(400).json({ message: "Seeker already confirmed check-in" }); return; }
+    if (payment.escrow_status === "released") { res.status(400).json({ message: "Escrow already released" }); return; }
+
+    // Allow auto-release only after 24h past check-in date
+    if (payment.checkin_date) {
+      const checkinPlus24h = new Date(payment.checkin_date);
+      checkinPlus24h.setHours(checkinPlus24h.getHours() + 24);
+      if (new Date() < checkinPlus24h) {
+        res.status(400).json({
+          message: `Auto-release is only available 24 hours after check-in date (${payment.checkin_date}).`,
+        });
+        return;
+      }
+    }
+
+    await releaseEscrow(id);
+    res.json({ message: "Escrow release initiated." });
   } catch (error) {
     next(error);
   }
