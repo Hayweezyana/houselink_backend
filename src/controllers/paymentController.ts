@@ -75,7 +75,7 @@ export const confirmCheckin = async (
 ): Promise<void> => {
   try {
     const seekerId = req.user?.id;
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     if (!seekerId) { res.status(403).json({ message: "Unauthorized" }); return; }
 
@@ -134,7 +134,7 @@ export const ownerRequestRelease = async (
 ): Promise<void> => {
   try {
     const ownerId = req.user?.id;
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     if (!ownerId) { res.status(403).json({ message: "Unauthorized" }); return; }
 
