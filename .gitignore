@@ -30,5 +30,8 @@ Dockerfile
 docker-compose.yml
 
 test
+_tests_
+auth.test.ts
+property.test.ts
 
 run-single-migration.ts
