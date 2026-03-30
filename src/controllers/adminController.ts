@@ -37,7 +37,7 @@ export const listUsers = async (req: Request, res: Response, next: NextFunction)
  */
 export const suspendUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const user = await db("users").where({ id }).first();
     if (!user) { res.status(404).json({ message: "User not found" }); return; }
     if (user.role === "admin") { res.status(403).json({ message: "Cannot suspend an admin" }); return; }
@@ -59,7 +59,7 @@ export const suspendUser = async (req: Request, res: Response, next: NextFunctio
  */
 export const unsuspendUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     await db("users").where({ id }).update({ suspended_at: null });
     res.json({ message: "User unsuspended" });
   } catch (error) {
@@ -73,7 +73,7 @@ export const unsuspendUser = async (req: Request, res: Response, next: NextFunct
  */
 export const deleteUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const user = await db("users").where({ id }).first();
     if (!user) { res.status(404).json({ message: "User not found" }); return; }
     if (user.role === "admin") { res.status(403).json({ message: "Cannot delete an admin" }); return; }
@@ -122,7 +122,7 @@ export const listAllProperties = async (req: Request, res: Response, next: NextF
  */
 export const verifyProperty = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const property = await db("properties").where({ id }).first();
     if (!property) { res.status(404).json({ message: "Property not found" }); return; }
 
@@ -140,7 +140,7 @@ export const verifyProperty = async (req: Request, res: Response, next: NextFunc
  */
 export const rejectProperty = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const { reason } = req.body;
     const property = await db("properties").where({ id }).first();
     if (!property) { res.status(404).json({ message: "Property not found" }); return; }
