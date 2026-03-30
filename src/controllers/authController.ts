@@ -11,6 +11,10 @@ const ACCESS_TTL = "15m";
 const OTP_TTL_MINUTES = 10;
 const VALID_ROLES = ["seeker", "owner"] as const;
 
+function isStrongPassword(password: string): boolean {
+  return password.length >= 8 && /[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+}
+
 function issueAccessToken(id: string, role: string): string {
   return jwt.sign({ id, role }, process.env.SECRET_KEY as string, {
     expiresIn: ACCESS_TTL,
@@ -104,8 +108,8 @@ export const register = async (req: Request, res: Response, next: NextFunction):
       res.status(400).json({ message: "Name, email, password and OTP are required" });
       return;
     }
-    if (password.length < 8) {
-      res.status(400).json({ message: "Password must be at least 8 characters" });
+    if (!isStrongPassword(password)) {
+      res.status(400).json({ message: "Password must be at least 8 characters and include a number or special character" });
       return;
     }
     if (!VALID_ROLES.includes(role)) {
@@ -235,8 +239,8 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
       res.status(400).json({ message: "Email, OTP and new password are required" });
       return;
     }
-    if (newPassword.length < 8) {
-      res.status(400).json({ message: "Password must be at least 8 characters" });
+    if (!isStrongPassword(newPassword)) {
+      res.status(400).json({ message: "Password must be at least 8 characters and include a number or special character" });
       return;
     }
 
@@ -378,8 +382,8 @@ export const changePassword = async (req: Request, res: Response, next: NextFunc
       res.status(400).json({ message: "currentPassword and newPassword are required" });
       return;
     }
-    if (newPassword.length < 8) {
-      res.status(400).json({ message: "New password must be at least 8 characters" });
+    if (!isStrongPassword(newPassword)) {
+      res.status(400).json({ message: "New password must be at least 8 characters and include a number or special character" });
       return;
     }
 

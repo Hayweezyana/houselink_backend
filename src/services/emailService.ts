@@ -1,9 +1,26 @@
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import logger from "../config/logger";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const FROM = "HouseLink <contact@houselink.com.ng>";
 
-const FROM = process.env.RESEND_FROM_EMAIL ?? "HouseLink <onboarding@resend.dev>";
+function createTransporter() {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: process.env.SMTP_SECURE === "true", // true for port 465, false for 587/TLS
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
+
+async function sendMail(to: string, subject: string, html: string): Promise<void> {
+  const transporter = createTransporter();
+  await transporter.sendMail({ from: FROM, to, subject, html });
+}
+
+// ─── OTP ──────────────────────────────────────────────────────────────────────
 
 const OTP_SUBJECTS: Record<string, string> = {
   signup: "Verify your HouseLink account",
@@ -35,6 +52,19 @@ const OTP_BODIES: Record<string, (code: string) => string> = {
     </div>`,
 };
 
+export async function sendOtpEmail(email: string, code: string, type: string): Promise<void> {
+  const subject = OTP_SUBJECTS[type] ?? "Your HouseLink code";
+  const html = OTP_BODIES[type]?.(code) ?? `<p>Your code: <strong>${code}</strong></p>`;
+  try {
+    await sendMail(email, subject, html);
+  } catch (error: any) {
+    logger.error("OTP email error:", error.message);
+    throw new Error("Failed to send OTP email");
+  }
+}
+
+// ─── Checkin confirmation ──────────────────────────────────────────────────────
+
 export async function sendCheckinConfirmationEmail(opts: {
   seekerEmail: string;
   seekerName: string;
@@ -47,7 +77,7 @@ export async function sendCheckinConfirmationEmail(opts: {
   reference: string;
 }): Promise<void> {
   const fmt = (n: number) => `₦${Number(n).toLocaleString("en-NG")}`;
-  const confirmUrl = `${process.env.FRONTEND_URL}/confirm-checkin/${opts.paymentId}`;
+  const confirmUrl = `${(process.env.FRONTEND_URL ?? "").split(",")[0].trim()}/confirm-checkin/${opts.paymentId}`;
 
   const html = `
     <div style="font-family:sans-serif;max-width:520px;margin:auto;color:#1a1a1a">
@@ -68,19 +98,19 @@ export async function sendCheckinConfirmationEmail(opts: {
         <div style="background:#fff9db;border:1px solid #ffd43b;border-radius:10px;padding:16px 20px;margin-bottom:24px">
           <p style="margin:0;font-size:14px;color:#664d03"><strong>What to do after check-in:</strong><br>Once you arrive at the property and everything looks good, click the button below to release payment to the owner. Funds will NOT be released until you confirm.</p>
         </div>
-        <a href="${confirmUrl}" style="display:block;background:#0ca678;color:#fff;text-align:center;padding:14px 24px;border-radius:10px;font-size:16px;font-weight:700;text-decoration:none">Confirm Check-in & Release Payment</a>
-        <p style="margin:20px 0 0;font-size:12px;color:#aaa;text-align:center">If you have an issue with the property, do not click the button. Contact us at support@houselinkng.com instead.</p>
+        <a href="${confirmUrl}" style="display:block;background:#0ca678;color:#fff;text-align:center;padding:14px 24px;border-radius:10px;font-size:16px;font-weight:700;text-decoration:none">Confirm Check-in &amp; Release Payment</a>
+        <p style="margin:20px 0 0;font-size:12px;color:#aaa;text-align:center">If you have an issue with the property, do not click the button. Contact us at contact@houselink.com.ng instead.</p>
       </div>
     </div>`;
 
-  const { error } = await resend.emails.send({
-    from: FROM,
-    to: opts.seekerEmail,
-    subject: `Action Required: Confirm your check-in at ${opts.propertyTitle}`,
-    html,
-  });
-  if (error) logger.error("Checkin confirmation email error:", error);
+  try {
+    await sendMail(opts.seekerEmail, `Action Required: Confirm your check-in at ${opts.propertyTitle}`, html);
+  } catch (error: any) {
+    logger.error("Checkin confirmation email error:", error.message);
+  }
 }
+
+// ─── Payment receipt ───────────────────────────────────────────────────────────
 
 export async function sendReceiptEmail(opts: {
   seekerEmail: string;
@@ -89,9 +119,9 @@ export async function sendReceiptEmail(opts: {
   ownerName: string;
   propertyTitle: string;
   propertyLocation: string;
-  totalAmount: number;   // naira
-  ownerAmount: number;   // naira (95%)
-  platformFee: number;   // naira (5%)
+  totalAmount: number;
+  ownerAmount: number;
+  platformFee: number;
   reference: string;
 }): Promise<void> {
   const fmt = (n: number) => `₦${Number(n).toLocaleString("en-NG")}`;
@@ -127,7 +157,7 @@ export async function sendReceiptEmail(opts: {
           <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Property</td><td style="padding:10px 14px">${opts.propertyTitle}</td></tr>
           <tr><td style="padding:10px 14px;font-weight:600">Seeker</td><td style="padding:10px 14px">${opts.seekerName}</td></tr>
           <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Total Received</td><td style="padding:10px 14px">${fmt(opts.totalAmount)}</td></tr>
-          <tr><td style="padding:10px 14px;font-weight:600">Platform Fee (5%)</td><td style="padding:10px 14px;color:#e03131">−${fmt(opts.platformFee)}</td></tr>
+          <tr><td style="padding:10px 14px;font-weight:600">Platform Fee (5%)</td><td style="padding:10px 14px;color:#e03131">&#8722;${fmt(opts.platformFee)}</td></tr>
           <tr style="background:#f8f9ff;border-top:2px solid #0ca678"><td style="padding:12px 14px;font-weight:700;font-size:15px">Your Payout</td><td style="padding:12px 14px;font-weight:700;color:#0ca678;font-size:18px">${fmt(opts.ownerAmount)}</td></tr>
           <tr><td style="padding:10px 14px;font-weight:600">Reference</td><td style="padding:10px 14px;font-family:monospace;font-size:12px">${opts.reference}</td></tr>
         </table>
@@ -136,10 +166,12 @@ export async function sendReceiptEmail(opts: {
     </div>`;
 
   await Promise.allSettled([
-    resend.emails.send({ from: FROM, to: opts.seekerEmail, subject: `Payment Receipt — ${opts.propertyTitle}`, html: seekerHtml }),
-    resend.emails.send({ from: FROM, to: opts.ownerEmail, subject: `Payout Incoming — ${opts.propertyTitle}`, html: ownerHtml }),
+    sendMail(opts.seekerEmail, `Payment Receipt — ${opts.propertyTitle}`, seekerHtml),
+    sendMail(opts.ownerEmail, `Payout Incoming — ${opts.propertyTitle}`, ownerHtml),
   ]);
 }
+
+// ─── Owner booking notification ────────────────────────────────────────────────
 
 export async function sendOwnerBookingNotificationEmail(opts: {
   ownerEmail: string;
@@ -169,22 +201,74 @@ export async function sendOwnerBookingNotificationEmail(opts: {
       </div>
     </div>`;
 
-  const { error } = await resend.emails.send({
-    from: FROM,
-    to: opts.ownerEmail,
-    subject: `New Booking — ${opts.propertyTitle}`,
-    html,
-  });
-  if (error) logger.error("Owner booking notification email error:", error);
+  try {
+    await sendMail(opts.ownerEmail, `New Booking — ${opts.propertyTitle}`, html);
+  } catch (error: any) {
+    logger.error("Owner booking notification email error:", error.message);
+  }
 }
 
-export async function sendOtpEmail(email: string, code: string, type: string): Promise<void> {
-  const subject = OTP_SUBJECTS[type] ?? "Your HouseLink code";
-  const html = OTP_BODIES[type]?.(code) ?? `<p>Your code: <strong>${code}</strong></p>`;
+// ─── New message notification ──────────────────────────────────────────────────
 
-  const { error } = await resend.emails.send({ from: FROM, to: email, subject, html });
-  if (error) {
-    logger.error("Resend error:", error);
-    throw new Error("Failed to send OTP email");
+export async function sendNewMessageEmail(opts: {
+  receiverEmail: string;
+  receiverName: string;
+  senderName: string;
+  propertyTitle: string;
+  messagePreview: string;
+  chatUrl: string;
+}): Promise<void> {
+  const html = `
+    <div style="font-family:sans-serif;max-width:480px;margin:auto">
+      <div style="background:#4c6ef5;padding:24px 32px;border-radius:16px 16px 0 0">
+        <h2 style="color:#fff;margin:0">New Message</h2>
+        <p style="color:#c5d0ff;margin:4px 0 0;font-size:13px">HouseLink</p>
+      </div>
+      <div style="background:#fff;padding:32px;border:1px solid #e8e8e8;border-top:none;border-radius:0 0 16px 16px">
+        <p>Hi <strong>${opts.receiverName}</strong>, you have a new message from <strong>${opts.senderName}</strong> about <strong>${opts.propertyTitle}</strong>.</p>
+        <div style="background:#f8f9ff;border-left:4px solid #4c6ef5;padding:14px 18px;border-radius:6px;margin:20px 0;font-size:14px;color:#333">${opts.messagePreview}</div>
+        <a href="${opts.chatUrl}" style="display:block;background:#4c6ef5;color:#fff;text-align:center;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none">View Message</a>
+      </div>
+    </div>`;
+
+  try {
+    await sendMail(opts.receiverEmail, `New message from ${opts.senderName} — ${opts.propertyTitle}`, html);
+  } catch (error: any) {
+    logger.error("New message email error:", error.message);
+  }
+}
+
+// ─── Bank account changed alert ────────────────────────────────────────────────
+
+export async function sendBankAccountChangedEmail(opts: {
+  ownerEmail: string;
+  ownerName: string;
+  accountName: string;
+  bankName: string;
+  maskedAccount: string;
+}): Promise<void> {
+  const html = `
+    <div style="font-family:sans-serif;max-width:480px;margin:auto">
+      <div style="background:#e03131;padding:24px 32px;border-radius:16px 16px 0 0">
+        <h2 style="color:#fff;margin:0">Payout Account Updated</h2>
+        <p style="color:#ffc9c9;margin:4px 0 0;font-size:13px">HouseLink Security Alert</p>
+      </div>
+      <div style="background:#fff;padding:32px;border:1px solid #e8e8e8;border-top:none;border-radius:0 0 16px 16px">
+        <p>Hi <strong>${opts.ownerName}</strong>, your payout bank account was just updated.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px">
+          <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Account Name</td><td style="padding:10px 14px">${opts.accountName}</td></tr>
+          <tr><td style="padding:10px 14px;font-weight:600">Bank</td><td style="padding:10px 14px">${opts.bankName}</td></tr>
+          <tr style="background:#f8f9ff"><td style="padding:10px 14px;font-weight:600">Account Number</td><td style="padding:10px 14px">${opts.maskedAccount}</td></tr>
+        </table>
+        <div style="background:#fff4e6;border:1px solid #fd7e14;border-radius:10px;padding:16px 20px">
+          <p style="margin:0;font-size:14px;color:#7c4a00">If you did not make this change, contact us immediately at <strong>contact@houselink.com.ng</strong>.</p>
+        </div>
+      </div>
+    </div>`;
+
+  try {
+    await sendMail(opts.ownerEmail, "Your HouseLink payout account was updated", html);
+  } catch (error: any) {
+    logger.error("Bank account changed email error:", error.message);
   }
 }

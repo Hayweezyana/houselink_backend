@@ -16,6 +16,7 @@ const ALLOWED_UPDATE_FIELDS = [
   "amenities",
   "images",
   "videos",
+  "is_available",
 ];
 
 export const createProperty = async (
@@ -74,6 +75,7 @@ export const getAllProperties: RequestHandler = async (req, res, next): Promise<
       maxPrice,
       type,
       rooms,
+      amenity,
       page = "1",
       limit = "12",
     } = req.query;
@@ -83,6 +85,7 @@ export const getAllProperties: RequestHandler = async (req, res, next): Promise<
     let query = db("properties")
       .select("properties.*", db.raw("COALESCE(AVG(reviews.rating), 0) as avg_rating"))
       .leftJoin("reviews", "reviews.property_id", "properties.id")
+      .whereNull("properties.deleted_at")
       .groupBy("properties.id")
       .orderBy("properties.created_at", "desc")
       .limit(Number(limit))
@@ -101,11 +104,12 @@ export const getAllProperties: RequestHandler = async (req, res, next): Promise<
     if (maxPrice) query = query.where("price", "<=", Number(maxPrice));
     if (type) query = query.where("properties.type", type);
     if (rooms) query = query.where("properties.rooms", Number(rooms));
+    if (amenity) query = query.whereRaw("amenities ILIKE ?", [`%${amenity}%`]);
 
     const properties = await query;
 
     // Total count for pagination
-    let countQuery = db("properties").count("id as total");
+    let countQuery = db("properties").whereNull("deleted_at").count("id as total");
     if (search) {
       const term = `%${search}%`;
       countQuery = countQuery.where((b) =>
@@ -119,6 +123,7 @@ export const getAllProperties: RequestHandler = async (req, res, next): Promise<
     if (maxPrice) countQuery = countQuery.where("price", "<=", Number(maxPrice));
     if (type) countQuery = countQuery.where("type", type);
     if (rooms) countQuery = countQuery.where("rooms", Number(rooms));
+    if (amenity) countQuery = countQuery.whereRaw("amenities ILIKE ?", [`%${amenity}%`]);
 
     const [{ total }] = await countQuery;
 
@@ -138,7 +143,7 @@ export const getAllProperties: RequestHandler = async (req, res, next): Promise<
 
 export const getPropertyById: RequestHandler = async (req, res, next): Promise<void> => {
   try {
-    const property = await db("properties").where({ id: req.params.id }).first();
+    const property = await db("properties").where({ id: req.params.id }).whereNull("deleted_at").first();
     if (!property) {
       res.status(404).json({ message: "Property not found" });
       return;
@@ -158,7 +163,7 @@ export const updateProperty = async (
     const { id } = req.params;
     const owner_id = req.user?.id;
 
-    const property = await db("properties").where({ id }).first();
+    const property = await db("properties").where({ id }).whereNull("deleted_at").first();
     if (!property) {
       res.status(404).json({ message: "Property not found" });
       return;
@@ -191,7 +196,7 @@ export const deleteProperty = async (
     const { id } = req.params;
     const owner_id = req.user?.id;
 
-    const property = await db("properties").where({ id }).first();
+    const property = await db("properties").where({ id }).whereNull("deleted_at").first();
     if (!property) {
       res.status(404).json({ message: "Property not found" });
       return;
@@ -201,7 +206,7 @@ export const deleteProperty = async (
       return;
     }
 
-    await db("properties").where({ id }).del();
+    await db("properties").where({ id }).update({ deleted_at: db.fn.now() });
     res.json({ message: "Property deleted successfully" });
   } catch (error) {
     next(error);

@@ -3,23 +3,27 @@ import crypto from "crypto";
 import db from "../config/db";
 import logger from "../config/logger";
 import { sendCheckinConfirmationEmail, sendOwnerBookingNotificationEmail } from "../services/emailService";
+import { createNotification } from "../controllers/notificationController";
 
 const router = express.Router();
 
 router.post("/", express.json({ type: "application/json" }), async (req, res): Promise<void> => {
   try {
-    const secret = process.env.PAYSTACK_WEBHOOK_SECRET;
-    const signature = req.headers["x-paystack-signature"] as string;
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      logger.error("PAYSTACK_SECRET_KEY is not configured — webhook rejected");
+      res.status(500).json({ message: "Webhook not configured" });
+      return;
+    }
 
-    if (secret) {
-      const hash = crypto
-        .createHmac("sha512", secret)
-        .update(JSON.stringify(req.body))
-        .digest("hex");
-      if (hash !== signature) {
-        res.status(401).json({ message: "Invalid signature" });
-        return;
-      }
+    const signature = req.headers["x-paystack-signature"] as string;
+    const hash = crypto
+      .createHmac("sha512", secret)
+      .update(JSON.stringify(req.body))
+      .digest("hex");
+    if (hash !== signature) {
+      res.status(401).json({ message: "Invalid signature" });
+      return;
     }
 
     const { event, data } = req.body;
@@ -72,6 +76,11 @@ router.post("/", express.json({ type: "application/json" }), async (req, res): P
             checkinDate: payment.checkin_date ?? "Not specified",
             checkoutDate: payment.checkout_date ?? "Not specified",
           });
+
+          await Promise.allSettled([
+            createNotification(payment.user_id, "payment", "Payment Held in Escrow", `Your payment for ${property.title} is held securely. Confirm check-in after arrival.`, `/payment/${payment.id}`),
+            createNotification(payment.owner_id, "booking", "New Booking Received", `${seeker.name} has booked ${property.title}. Funds are in escrow.`, `/dashboard`),
+          ]);
         }
       } catch (ownerEmailErr: any) {
         logger.error("Owner booking notification email error:", ownerEmailErr.message);

@@ -26,6 +26,7 @@ import uploadsRoute from "./routes/uploads";
 import notificationRoutes from "./routes/notificationRoutes";
 import availabilityRoutes from "./routes/availabilityRoutes";
 import payoutRoutes from "./routes/payoutRoutes";
+import adminRoutes from "./routes/adminRoutes";
 
 dotenv.config();
 
@@ -90,6 +91,22 @@ const subscribeLimiter = rateLimit({
   message: { message: "Too many subscription attempts." },
 });
 
+const paymentLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  message: { message: "Too many payment requests. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const payoutLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 15,
+  message: { message: "Too many payout requests. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // ─── Socket.io (scoped to property rooms) ────────────────────────────────────
 const io = new Server(server, {
   cors: { origin: allowedOrigins, credentials: true },
@@ -107,6 +124,29 @@ io.on("connection", (socket) => {
       `receiveMessage-${data.property_id}`,
       data
     );
+  });
+
+  // Typing indicators
+  socket.on("typing", (data: { property_id: string; user_id: string }) => {
+    socket.to(`property-${data.property_id}`).emit("userTyping", {
+      user_id: data.user_id,
+      property_id: data.property_id,
+    });
+  });
+
+  socket.on("stopTyping", (data: { property_id: string; user_id: string }) => {
+    socket.to(`property-${data.property_id}`).emit("userStopTyping", {
+      user_id: data.user_id,
+      property_id: data.property_id,
+    });
+  });
+
+  // Read receipts
+  socket.on("messagesRead", (data: { property_id: string; reader_id: string }) => {
+    socket.to(`property-${data.property_id}`).emit("messagesRead", {
+      property_id: data.property_id,
+      reader_id: data.reader_id,
+    });
   });
 
   socket.on("disconnect", () => {
@@ -187,17 +227,19 @@ app.get("/", (_req: Request, res: Response) => {
   res.json({ status: "ok", service: "HouseLink API", version: "1.0.0", docs: "/api/docs" });
 });
 
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api", apiLimiter);
 app.use("/api/properties", propertyRoutes);
 app.use("/api/chat", chatRoutes);
-app.use("/api/payment", paymentRoutes);
+app.use("/api/payment", paymentLimiter, paymentRoutes);
 app.use("/api/webhook/paystack", webhookRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/uploads", uploadsRoute);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/properties/:property_id/availability", availabilityRoutes);
-app.use("/api/payout", payoutRoutes);
+app.use("/api/payout", payoutLimiter, payoutRoutes);
+app.use("/api/admin", adminRoutes);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 app.use((_req: Request, res: Response) => {

@@ -1,6 +1,9 @@
 import { NextFunction, Request, Response } from "express";
 import db from "../config/db";
 import { v4 as uuidv4 } from "uuid";
+import { createNotification } from "./notificationController";
+import { sendNewMessageEmail } from "../services/emailService";
+import { io } from "../index";
 
 
 /**
@@ -22,6 +25,29 @@ export const sendMessages = async (req: Request, res: Response, next: NextFuncti
       property_id,
       message,
     }).returning("*");
+
+    // Notify receiver in-app + email
+    try {
+      const [sender, receiver, property] = await Promise.all([
+        db("users").where({ id: sender_id }).select("name").first(),
+        db("users").where({ id: receiver_id }).select("name", "email").first(),
+        db("properties").where({ id: property_id }).select("title").first(),
+      ]);
+      if (sender && receiver && property) {
+        const frontendUrl = (process.env.FRONTEND_URL ?? "").split(",")[0].trim();
+        await Promise.allSettled([
+          createNotification(receiver_id, "message", "New message", `${sender.name} sent you a message about ${property.title}`, `/chat/${property_id}`),
+          sendNewMessageEmail({
+            receiverEmail: receiver.email,
+            receiverName: receiver.name,
+            senderName: sender.name,
+            propertyTitle: property.title,
+            messagePreview: message.length > 120 ? message.slice(0, 120) + "…" : message,
+            chatUrl: `${frontendUrl}/chat/${property_id}`,
+          }),
+        ]);
+      }
+    } catch (_) {}
 
     res.status(201).json(newMessage[0]);
   } catch (error) {
@@ -45,10 +71,21 @@ export const getMessages = async (req: Request, res: Response, next: NextFunctio
       })
       .orderBy("created_at", "asc");
 
-    // Mark received messages as read
-    await db("messages")
+    // Mark received messages as read and emit read receipt
+    const unread = await db("messages")
       .where({ property_id, receiver_id: user_id, is_read: false })
-      .update({ is_read: true });
+      .select("id");
+
+    if (unread.length > 0) {
+      await db("messages")
+        .where({ property_id, receiver_id: user_id, is_read: false })
+        .update({ is_read: true });
+
+      io.to(`property-${property_id}`).emit("messagesRead", {
+        property_id,
+        reader_id: user_id,
+      });
+    }
 
     res.json(messages);
   } catch (error) {

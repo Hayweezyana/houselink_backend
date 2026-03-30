@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import db from "../config/db";
 
 const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const token = req.header("Authorization")?.split(" ")[1];
@@ -19,6 +20,13 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
       email: string;
       role?: string;
     };
+
+    const user = await db("users").where({ id: decoded.id }).select("suspended_at").first();
+    if (user?.suspended_at) {
+      res.status(403).json({ message: "Account suspended. Contact support@houselinkng.com." });
+      return;
+    }
+
     req.user = { id: decoded.id, email: decoded.email, role: decoded.role };
     next();
   } catch {

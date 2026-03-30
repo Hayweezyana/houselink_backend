@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import axios from "axios";
 import db from "../config/db";
 import logger from "../config/logger";
+import { sendBankAccountChangedEmail } from "../services/emailService";
 
 const PAYSTACK_BASE = "https://api.paystack.co";
 const PLATFORM_FEE_PERCENT = 0.05; // 5%
@@ -96,6 +97,23 @@ export const saveBankAccount = async (req: Request, res: Response, next: NextFun
     const [account] = await db("bank_accounts")
       .insert({ owner_id, account_number, account_name, bank_name, bank_code, recipient_code, is_default: true })
       .returning("*");
+
+    // Notify owner by email that payout account was changed (security alert)
+    try {
+      const owner = await db("users").where({ id: owner_id }).select("email", "name").first();
+      if (owner) {
+        const masked = account_number.slice(0, 3) + "****" + account_number.slice(-3);
+        await sendBankAccountChangedEmail({
+          ownerEmail: owner.email,
+          ownerName: owner.name,
+          accountName: account_name,
+          bankName: bank_name,
+          maskedAccount: masked,
+        });
+      }
+    } catch (emailErr: any) {
+      logger.error("Bank account change email error:", emailErr.message);
+    }
 
     res.status(201).json({ account });
   } catch (error) {
