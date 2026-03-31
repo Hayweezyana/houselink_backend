@@ -58,8 +58,10 @@ export async function sendOtpEmail(email: string, code: string, type: string): P
   try {
     await sendMail(email, subject, html);
   } catch (error: any) {
-    logger.error("OTP email error:", error.message);
-    throw new Error("Failed to send OTP email");
+    logger.error("OTP email error:", error?.message ?? error);
+    logger.error("SMTP config — host:%s port:%s user:%s",
+      process.env.SMTP_HOST, process.env.SMTP_PORT, process.env.SMTP_USER);
+    throw new Error(`Failed to send OTP email: ${error?.message ?? "unknown"}`);
   }
 }
 
