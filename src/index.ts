@@ -13,6 +13,7 @@ import cookieParser from "cookie-parser";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger";
 import { startCronJobs } from "./jobs/cronJobs";
+import { initSocket } from "./config/socket";
 
 import logger from "./config/logger";
 import authRoutes from "./routes/authRoutes";
@@ -32,6 +33,10 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+
+// Trust the first hop (Render / any reverse proxy) so that
+// X-Forwarded-For is used for rate-limit key generation.
+app.set("trust proxy", 1);
 
 // ─── Compression (gzip/brotli) ────────────────────────────────────────────────
 app.use(compression());
@@ -111,6 +116,7 @@ const payoutLimiter = rateLimit({
 const io = new Server(server, {
   cors: { origin: allowedOrigins, credentials: true },
 });
+initSocket(io);
 
 io.on("connection", (socket) => {
   logger.debug(`Socket connected: ${socket.id}`);
@@ -153,8 +159,6 @@ io.on("connection", (socket) => {
     logger.debug(`Socket disconnected: ${socket.id}`);
   });
 });
-
-export { io };
 
 // ─── Subscribe ────────────────────────────────────────────────────────────────
 app.post(

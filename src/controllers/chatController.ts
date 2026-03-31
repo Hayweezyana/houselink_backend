@@ -3,7 +3,7 @@ import db from "../config/db";
 import { v4 as uuidv4 } from "uuid";
 import { createNotification } from "./notificationController";
 import { sendNewMessageEmail } from "../services/emailService";
-import { io } from "../index";
+import { getIo } from "../config/socket";
 
 
 /**
@@ -81,7 +81,7 @@ export const getMessages = async (req: Request, res: Response, next: NextFunctio
         .where({ property_id, receiver_id: user_id, is_read: false })
         .update({ is_read: true });
 
-      io.to(`property-${property_id}`).emit("messagesRead", {
+      getIo().to(`property-${property_id}`).emit("messagesRead", {
         property_id,
         reader_id: user_id,
       });
