@@ -4,11 +4,13 @@ import {
   getAvailability,
   setAvailability,
   deleteAvailability,
+  requestInspection,
 } from "../controllers/availabilityController";
 
 const router = express.Router({ mergeParams: true });
 
 router.get("/", getAvailability);
+router.post("/request", authMiddleware, requestInspection);
 router.post("/", authMiddleware, setAvailability);
 router.delete("/:id", authMiddleware, deleteAvailability);
 

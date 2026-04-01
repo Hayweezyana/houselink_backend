@@ -5,6 +5,43 @@ import { createNotification } from "./notificationController";
 import { sendNewMessageEmail } from "../services/emailService";
 import { getIo } from "../config/socket";
 
+/**
+ * GET /api/chat/conversations
+ * Returns one entry per property the current user has messaged,
+ * ordered by most recent message. Includes last_message + unread_count.
+ */
+export const getConversations = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const user_id = req.user?.id;
+    if (!user_id) { res.status(403).json({ message: "Unauthorized" }); return; }
+
+    const rows = await db.raw<{ rows: any[] }>(`
+      SELECT *
+      FROM (
+        SELECT DISTINCT ON (m.property_id)
+          m.property_id,
+          m.message        AS last_message,
+          m.created_at     AS last_message_at,
+          m.sender_id,
+          p.title, p.location, p.images, p.owner_id,
+          (
+            SELECT COUNT(*)::int FROM messages u
+            WHERE u.property_id = m.property_id
+              AND u.receiver_id = ?
+              AND u.is_read    = false
+          ) AS unread_count
+        FROM messages m
+        JOIN properties p ON p.id = m.property_id
+        WHERE m.sender_id = ? OR m.receiver_id = ?
+        ORDER BY m.property_id, m.created_at DESC
+      ) conversations
+      ORDER BY last_message_at DESC
+    `, [user_id, user_id, user_id]);
+
+    res.json(rows.rows);
+  } catch (error) { next(error); }
+};
+
 
 /**
  * Send a message
