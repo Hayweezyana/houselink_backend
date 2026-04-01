@@ -1,9 +1,11 @@
-import cloudinaryV2 from "cloudinary";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cloudinaryModule = require("cloudinary");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const multerCloudinary = require("multer-storage-cloudinary");
 const CloudinaryStorage = multerCloudinary.CloudinaryStorage ?? multerCloudinary.default?.CloudinaryStorage ?? multerCloudinary;
 
-const cloudinary = cloudinaryV2.v2;
+// multer-storage-cloudinary expects the full module (it accesses .v2 internally)
+const cloudinary = cloudinaryModule.v2;
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -12,7 +14,7 @@ cloudinary.config({
 });
 
 const storage = new CloudinaryStorage({
-  cloudinary,
+  cloudinary: cloudinaryModule, // pass full module, not the unwrapped v2
   params: {
     folder: "houselink-properties",
     allowed_formats: ["jpg", "png", "jpeg", "webp", "mp4", "mov"],
