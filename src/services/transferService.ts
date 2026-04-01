@@ -1,6 +1,7 @@
 import axios from "axios";
 import db from "../config/db";
 import logger from "../config/logger";
+import { sendPropertyUnavailableReminderEmail } from "./emailService";
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
 const PLATFORM_FEE_PERCENT = 0.05;
@@ -56,8 +57,27 @@ export async function releaseEscrow(paymentId: string): Promise<void> {
       transfer_reference: transferRef,
       platform_fee: platformFeeKobo,
       owner_amount: ownerAmountKobo,
-      escrow_status: "held",
+      escrow_status: "released",
     });
+
+    // Mark property unavailable and notify owner
+    try {
+      await db("properties").where({ id: payment.property_id }).update({ is_available: false });
+      const [property, owner] = await Promise.all([
+        db("properties").where({ id: payment.property_id }).select("title", "id").first(),
+        db("users").where({ id: payment.owner_id }).select("name", "email").first(),
+      ]);
+      if (property && owner) {
+        await sendPropertyUnavailableReminderEmail({
+          ownerEmail: owner.email,
+          ownerName: owner.name,
+          propertyTitle: property.title,
+          propertyId: property.id,
+        });
+      }
+    } catch (notifyErr: any) {
+      logger.error("Post-release property update error:", notifyErr?.message ?? notifyErr);
+    }
   } catch (err: any) {
     logger.error("Paystack transfer failed:", err?.response?.data || err.message);
     await db("payments").where({ id: paymentId }).update({

@@ -83,7 +83,16 @@ export const getAllProperties: RequestHandler = async (req, res, next): Promise<
     const offset = (Number(page) - 1) * Number(limit);
 
     let query = db("properties")
-      .select("properties.*", db.raw("COALESCE(AVG(reviews.rating), 0) as avg_rating"))
+      .select(
+        "properties.*",
+        db.raw("COALESCE(AVG(reviews.rating), 0) as avg_rating"),
+        db.raw(`EXISTS(
+          SELECT 1 FROM payments
+          WHERE payments.property_id = properties.id
+            AND payments.status = 'success'
+            AND payments.escrow_status = 'held'
+        ) as has_active_payment`)
+      )
       .leftJoin("reviews", "reviews.property_id", "properties.id")
       .whereNull("properties.deleted_at")
       .groupBy("properties.id")
@@ -143,7 +152,19 @@ export const getAllProperties: RequestHandler = async (req, res, next): Promise<
 
 export const getPropertyById: RequestHandler = async (req, res, next): Promise<void> => {
   try {
-    const property = await db("properties").where({ id: req.params.id }).whereNull("deleted_at").first();
+    const property = await db("properties")
+      .select(
+        "properties.*",
+        db.raw(`EXISTS(
+          SELECT 1 FROM payments
+          WHERE payments.property_id = properties.id
+            AND payments.status = 'success'
+            AND payments.escrow_status = 'held'
+        ) as has_active_payment`)
+      )
+      .where({ "properties.id": req.params.id })
+      .whereNull("deleted_at")
+      .first();
     if (!property) {
       res.status(404).json({ message: "Property not found" });
       return;

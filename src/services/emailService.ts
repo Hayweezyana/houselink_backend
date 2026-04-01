@@ -239,6 +239,37 @@ export async function sendNewMessageEmail(opts: {
   }
 }
 
+// ─── Property unavailable reminder ────────────────────────────────────────────
+
+export async function sendPropertyUnavailableReminderEmail(opts: {
+  ownerEmail: string;
+  ownerName: string;
+  propertyTitle: string;
+  propertyId: string;
+}): Promise<void> {
+  const manageUrl = `${(process.env.FRONTEND_URL ?? "").split(",")[0].trim()}/manage-properties`;
+  const html = `
+    <div style="font-family:sans-serif;max-width:520px;margin:auto">
+      <div style="background:#4c6ef5;padding:24px 32px;border-radius:16px 16px 0 0">
+        <h2 style="color:#fff;margin:0">Booking Completed — Action Required</h2>
+        <p style="color:#c5d0ff;margin:4px 0 0;font-size:13px">HouseLink</p>
+      </div>
+      <div style="background:#fff;padding:32px;border:1px solid #e8e8e8;border-top:none;border-radius:0 0 16px 16px">
+        <p>Hi <strong>${opts.ownerName}</strong>,</p>
+        <p>The escrow for your property <strong>${opts.propertyTitle}</strong> has been released — the booking is now complete.</p>
+        <p>Your property is currently marked as <strong>unavailable</strong> on HouseLink. If it is ready to accept new bookings, please update the listing.</p>
+        <a href="${manageUrl}" style="display:inline-block;margin-top:8px;background:#4c6ef5;color:#fff;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none">Manage My Properties</a>
+        <p style="margin-top:24px;font-size:12px;color:#aaa">If you believe this is an error, contact us at contact@houselink.com.ng.</p>
+      </div>
+    </div>`;
+
+  try {
+    await sendMail(opts.ownerEmail, `Action Required: Update availability for ${opts.propertyTitle}`, html);
+  } catch (error: any) {
+    logger.error("Property unavailable reminder email error:", error?.message ?? error);
+  }
+}
+
 // ─── Bank account changed alert ────────────────────────────────────────────────
 
 export async function sendBankAccountChangedEmail(opts: {
