@@ -35,7 +35,7 @@ export const initializePayment = async (
         email,
         amount: Math.round(Number(amount) * 100),
         reference,
-        callback_url: `${process.env.FRONTEND_URL}/payment-success`,
+        callback_url: `${(process.env.FRONTEND_URL ?? "").split(",")[0].trim()}/payment-success`,
       },
       {
         headers: {
